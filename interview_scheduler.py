@@ -183,6 +183,93 @@ def _utc_offset_hours(tz_name: str) -> float:
     return TZ_OFFSETS.get(tz_name, 0)
 
 
+DAY_NAMES = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+def parse_busy_times(text: str, date_range_start: date, date_range_end: date) -> list[tuple[datetime, datetime]]:
+    """Parse busy time strings into (start, end) datetime pairs.
+
+    Supported formats:
+      "Mon 9-11"            — every Monday from 9:00-11:00 in the date range
+      "Mon 9:30-11:30"      — supports half-hour times
+      "2026-02-03 9-11"     — specific date from 9:00-11:00
+      "2026-02-03 9:00-11:00" — specific date with minutes
+
+    Multiple entries separated by commas:
+      "Mon 9-11, Wed 14-16, 2026-02-05 10-12"
+    """
+    blocks: list[tuple[datetime, datetime]] = []
+    if not text.strip():
+        return blocks
+
+    for entry in text.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+
+        parts = entry.split()
+        if len(parts) != 2:
+            continue
+
+        day_part, time_part = parts[0].strip(), parts[1].strip()
+
+        # Parse the time range
+        if "-" not in time_part:
+            continue
+        start_str, end_str = time_part.split("-", 1)
+
+        def _parse_hour(s):
+            s = s.strip()
+            if ":" in s:
+                h, m = s.split(":")
+                return int(h) + int(m) / 60
+            return int(s)
+
+        try:
+            start_h = _parse_hour(start_str)
+            end_h = _parse_hour(end_str)
+        except ValueError:
+            continue
+
+        # Determine which dates this applies to
+        target_dates: list[date] = []
+        day_lower = day_part.lower()[:3]
+
+        if day_lower in DAY_NAMES:
+            # Recurring weekday — find all matching days in range
+            target_weekday = DAY_NAMES[day_lower]
+            d = date_range_start
+            while d <= date_range_end:
+                if d.weekday() == target_weekday:
+                    target_dates.append(d)
+                d += timedelta(days=1)
+        else:
+            # Try parsing as a specific date
+            try:
+                specific = datetime.strptime(day_part, "%Y-%m-%d").date()
+                if date_range_start <= specific <= date_range_end:
+                    target_dates.append(specific)
+            except ValueError:
+                continue
+
+        for td in target_dates:
+            start_mins = int(start_h * 60)
+            end_mins = int(end_h * 60)
+            block_start = datetime(td.year, td.month, td.day, start_mins // 60, start_mins % 60)
+            block_end = datetime(td.year, td.month, td.day, end_mins // 60, end_mins % 60)
+            blocks.append((block_start, block_end))
+
+    return blocks
+
+
+def _slot_conflicts(start: datetime, end: datetime, busy: list[tuple[datetime, datetime]]) -> bool:
+    """Check if a proposed slot overlaps any busy block."""
+    for busy_start, busy_end in busy:
+        if start < busy_end and end > busy_start:
+            return True
+    return False
+
+
 def propose_slots(
     start_date: date,
     end_date: date,
@@ -191,18 +278,21 @@ def propose_slots(
     duration_min: int,
     buffer_min: int,
     candidate_tz: str,
+    busy_times: list[tuple[datetime, datetime]] | None = None,
     count: int = 3,
 ) -> list[dict]:
-    """Return *count* proposed interview slots spread across days/times."""
+    """Return *count* proposed interview slots spread across days/times.
+
+    Generates candidate slots at every half-hour across the date range,
+    filters out busy-time conflicts, then picks a spread of morning /
+    midday / late-afternoon options on different days.
+    """
     offset = _utc_offset_hours(candidate_tz)
     total_block = duration_min + buffer_min
+    if busy_times is None:
+        busy_times = []
 
-    target_local_hours = [
-        work_start_hour + 1,                            # morning
-        (work_start_hour + work_end_hour) // 2,         # midday
-        work_end_hour - (total_block // 60) - 1,        # late afternoon
-    ]
-
+    # Build every possible half-hour slot in the range
     available_days: list[date] = []
     d = start_date
     while d <= end_date:
@@ -213,37 +303,84 @@ def propose_slots(
     if not available_days:
         raise ValueError("No weekdays in the provided date range.")
 
+    # Categorize slots by time-of-day for variety
+    morning: list[dict] = []     # work_start .. work_start+3
+    midday: list[dict] = []      # middle of day
+    afternoon: list[dict] = []   # last 3 hours
+
+    mid_boundary = work_start_hour + (work_end_hour - work_start_hour) // 3
+    late_boundary = work_end_hour - (work_end_hour - work_start_hour) // 3
+
+    for day in available_days:
+        hour = work_start_hour
+        while hour + total_block / 60 <= work_end_hour:
+            local_start = datetime(day.year, day.month, day.day, int(hour), int((hour % 1) * 60))
+            local_end = local_start + timedelta(minutes=duration_min)
+            local_end_with_buffer = local_start + timedelta(minutes=total_block)
+
+            # Check busy conflicts (in local/candidate time)
+            if not _slot_conflicts(local_start, local_end_with_buffer, busy_times):
+                utc_start = local_start - timedelta(hours=offset)
+                utc_end = utc_start + timedelta(minutes=duration_min)
+                slot = {
+                    "start_utc": utc_start,
+                    "end_utc": utc_end,
+                    "start_local": local_start,
+                    "end_local": local_end,
+                    "candidate_tz": candidate_tz,
+                }
+                if hour < mid_boundary:
+                    morning.append(slot)
+                elif hour < late_boundary:
+                    midday.append(slot)
+                else:
+                    afternoon.append(slot)
+
+            hour += 0.5  # 30-minute increments
+
+    # Pick slots spread across buckets and different days
     slots: list[dict] = []
-    day_idx = 0
-    hour_idx = 0
-    while len(slots) < count and day_idx < len(available_days):
-        local_hour = target_local_hours[hour_idx % len(target_local_hours)]
-        end_hour_needed = local_hour + total_block / 60
-        if local_hour < work_start_hour or end_hour_needed > work_end_hour:
-            hour_idx += 1
-            day_idx += 1
-            continue
+    used_days: set[date] = set()
+    buckets = [morning, midday, afternoon]
 
-        day = available_days[day_idx]
-        local_start = datetime(day.year, day.month, day.day, local_hour, 0)
-        utc_start = local_start - timedelta(hours=offset)
-        utc_end = utc_start + timedelta(minutes=duration_min)
+    for bucket in buckets:
+        if len(slots) >= count:
+            break
+        for candidate_slot in bucket:
+            slot_date = candidate_slot["start_local"].date()
+            if slot_date not in used_days:
+                candidate_slot["option"] = len(slots) + 1
+                slots.append(candidate_slot)
+                used_days.add(slot_date)
+                break
 
-        slots.append(
-            {
-                "option": len(slots) + 1,
-                "start_utc": utc_start,
-                "end_utc": utc_end,
-                "start_local": local_start,
-                "end_local": local_start + timedelta(minutes=duration_min),
-                "candidate_tz": candidate_tz,
-            }
-        )
-        hour_idx += 1
-        day_idx += 1
+    # If we still need more, fill from any bucket on unused days
+    if len(slots) < count:
+        all_slots = morning + midday + afternoon
+        for candidate_slot in all_slots:
+            if len(slots) >= count:
+                break
+            slot_date = candidate_slot["start_local"].date()
+            if slot_date not in used_days:
+                candidate_slot["option"] = len(slots) + 1
+                slots.append(candidate_slot)
+                used_days.add(slot_date)
+
+    # Last resort: allow same day
+    if len(slots) < count:
+        all_slots = morning + midday + afternoon
+        for candidate_slot in all_slots:
+            if len(slots) >= count:
+                break
+            if candidate_slot not in slots:
+                candidate_slot["option"] = len(slots) + 1
+                slots.append(candidate_slot)
 
     if not slots:
-        raise ValueError("Could not generate any slots within the given constraints.")
+        raise ValueError(
+            "Could not find any available slots. All times conflict with busy schedules.\n"
+            "Try widening the date range, adjusting working hours, or reducing busy times."
+        )
     return slots
 
 
@@ -475,6 +612,7 @@ def run_schedule(params: dict) -> None:
         duration_min=params["duration_min"],
         buffer_min=params["buffer_min"],
         candidate_tz=params["candidate_tz"],
+        busy_times=params.get("busy_times", []),
     )
 
     # --- Email drafts ---
@@ -719,7 +857,27 @@ def interactive_mode() -> None:
 
     print()
     _hr()
-    print("  STEP 4: SCHEDULING CONSTRAINTS")
+    print("  STEP 4: BUSY TIMES (optional)")
+    _hr()
+    print("  Enter times when interviewers are NOT available.")
+    print("  This helps avoid scheduling conflicts.")
+    print()
+    print("  Format examples:")
+    print('    Mon 9-11          (every Monday 9am-11am in the date range)')
+    print('    Tue 14-16         (every Tuesday 2pm-4pm)')
+    print('    2026-02-05 10-12  (specific date 10am-12pm)')
+    print()
+    print("  Separate multiple blocks with commas:")
+    print('    Mon 9-11, Wed 14-16, Fri 9-10')
+    print()
+    print("  Leave blank if you don't have this info yet (you can always")
+    print("  re-run later with updated availability).")
+    print()
+    busy_text = _ask("Busy times to avoid (or blank to skip)", required=False)
+
+    print()
+    _hr()
+    print("  STEP 5: SCHEDULING CONSTRAINTS")
     _hr()
     today_str = date.today().strftime("%Y-%m-%d")
     next_week = (date.today() + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -736,7 +894,7 @@ def interactive_mode() -> None:
 
     print()
     _hr()
-    print("  STEP 5: LOCATION")
+    print("  STEP 6: LOCATION")
     _hr()
     location = _ask("Meeting location or video link", default="Microsoft Teams")
 
@@ -754,12 +912,17 @@ def interactive_mode() -> None:
     print(f"    Hours      : {work_start}:00 - {work_end}:00")
     print(f"    Duration   : {duration} min + {buffer_time} min buffer")
     print(f"    Location   : {location}")
+    if busy_text:
+        print(f"    Busy times : {busy_text}")
     print()
 
     confirm = input("  Look good? (Y/n): ").strip().lower()
     if confirm == "n":
         print("\n  Cancelled. Run again to start over.\n")
         return
+
+    # Parse busy times now that we have the date range
+    busy_times = parse_busy_times(busy_text, start_date, end_date) if busy_text else []
 
     params = {
         "candidate_name": candidate_name,
@@ -775,6 +938,7 @@ def interactive_mode() -> None:
         "duration_min": duration,
         "buffer_min": buffer_time,
         "location": location,
+        "busy_times": busy_times,
     }
 
     run_schedule(params)
@@ -853,6 +1017,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--buffer", type=int, default=15, help="Buffer time in minutes (default: 15)")
     p.add_argument("--location", default="Microsoft Teams",
                    help="Location or meeting link text")
+    p.add_argument("--busy", default="",
+                   help='Busy times to avoid: "Mon 9-11, Wed 14-16, 2026-02-05 10-12"')
     return p
 
 
@@ -906,6 +1072,7 @@ def main() -> None:
         "duration_min": args.duration,
         "buffer_min": args.buffer,
         "location": args.location,
+        "busy_times": parse_busy_times(args.busy, args.start_date, args.end_date) if args.busy else [],
     }
     run_schedule(params)
 
