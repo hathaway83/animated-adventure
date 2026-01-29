@@ -870,10 +870,20 @@ def interactive_mode() -> None:
     print("  Separate multiple blocks with commas:")
     print('    Mon 9-11, Wed 14-16, Fri 9-10')
     print()
+    print("  You can also paste output from a Gemini Gem or AI tool that reads")
+    print("  calendar screenshots (see gemini_gem_instructions.md).")
+    print()
     print("  Leave blank if you don't have this info yet (you can always")
     print("  re-run later with updated availability).")
     print()
     busy_text = _ask("Busy times to avoid (or blank to skip)", required=False)
+    # Also check if they want to load from a file
+    if not busy_text:
+        busy_file = _ask("Or path to a busy-times file (or blank to skip)", required=False)
+        if busy_file and Path(busy_file).exists():
+            raw = Path(busy_file).read_text().strip()
+            busy_text = raw.replace("\n", ", ").replace("\r", "")
+            print(f"    Loaded: {busy_text[:80]}{'...' if len(busy_text) > 80 else ''}")
 
     print()
     _hr()
@@ -974,6 +984,25 @@ SAMPLE_PARAMS = {
 # ---------------------------------------------------------------------------
 
 
+def _collect_busy_times(busy_arg: str, busy_file_arg: str, start: date, end: date) -> list[tuple[datetime, datetime]]:
+    """Merge busy times from --busy string and --busy-file."""
+    parts = []
+    if busy_arg:
+        parts.append(busy_arg)
+    if busy_file_arg:
+        p = Path(busy_file_arg)
+        if p.exists():
+            # Read file, join lines with commas (supports one-per-line or comma-separated)
+            raw = p.read_text().strip()
+            # Normalize newlines to commas
+            normalized = raw.replace("\n", ", ").replace("\r", "")
+            parts.append(normalized)
+        else:
+            print(f"  Warning: busy file not found: {busy_file_arg}")
+    combined = ", ".join(parts)
+    return parse_busy_times(combined, start, end) if combined else []
+
+
 def parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
@@ -1019,6 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Location or meeting link text")
     p.add_argument("--busy", default="",
                    help='Busy times to avoid: "Mon 9-11, Wed 14-16, 2026-02-05 10-12"')
+    p.add_argument("--busy-file", default="",
+                   help="Path to a text file with busy times (one per line or comma-separated)")
     return p
 
 
@@ -1072,7 +1103,7 @@ def main() -> None:
         "duration_min": args.duration,
         "buffer_min": args.buffer,
         "location": args.location,
-        "busy_times": parse_busy_times(args.busy, args.start_date, args.end_date) if args.busy else [],
+        "busy_times": _collect_busy_times(args.busy, args.busy_file, args.start_date, args.end_date),
     }
     run_schedule(params)
 
