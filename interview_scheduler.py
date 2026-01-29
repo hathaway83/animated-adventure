@@ -7,6 +7,8 @@ for interview scheduling. No external APIs or ATS required.
 Run with no arguments for an interactive guided walkthrough.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
