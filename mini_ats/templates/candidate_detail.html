@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ candidate.full_name }} — Mini ATS{% endblock %}
+{% block content %}
+<div class="flex-between">
+  <h1>{{ candidate.full_name }}
+    <span class="badge badge-primary">{{ candidate.stage_rel.name }}</span>
+    {% if candidate.is_overdue %}<span class="badge badge-danger">Overdue</span>{% endif %}
+    {% if candidate.is_stale %}<span class="badge badge-warning">Stale</span>{% endif %}
+  </h1>
+  <div>
+    <a href="/candidates/{{ candidate.id }}/edit" class="btn btn-sm">Edit</a>
+    <form method="post" action="/candidates/{{ candidate.id }}/archive" style="display:inline;">
+      <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Archive this candidate?')">Archive</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <tr><td style="width:160px;font-weight:600;">Email</td><td><a href="mailto:{{ candidate.email }}">{{ candidate.email }}</a></td></tr>
+    {% if candidate.phone %}<tr><td style="font-weight:600;">Phone</td><td>{{ candidate.phone }}</td></tr>{% endif %}
+    <tr><td style="font-weight:600;">Role</td><td>{{ candidate.role }}</td></tr>
+    <tr><td style="font-weight:600;">Source</td><td>{{ candidate.source or '—' }}</td></tr>
+    <tr><td style="font-weight:600;">Hiring Manager</td><td>{{ candidate.hiring_manager or '—' }}</td></tr>
+    <tr><td style="font-weight:600;">Recruiter</td><td>{{ candidate.recruiter or '—' }}</td></tr>
+    <tr><td style="font-weight:600;">Last Touch</td><td>{{ candidate.last_touch_date or '—' }}</td></tr>
+    <tr><td style="font-weight:600;">Next Step</td><td>{{ candidate.next_step or '—' }}</td></tr>
+    <tr><td style="font-weight:600;">Next Step Due</td><td>{{ candidate.next_step_due_date or '—' }}</td></tr>
+    {% if candidate.linkedin_url %}<tr><td style="font-weight:600;">LinkedIn</td><td><a href="{{ candidate.linkedin_url }}" target="_blank">{{ candidate.linkedin_url }}</a></td></tr>{% endif %}
+    {% if candidate.resume_url %}<tr><td style="font-weight:600;">Resume</td><td><a href="{{ candidate.resume_url }}" target="_blank">{{ candidate.resume_url }}</a></td></tr>{% endif %}
+  </table>
+</div>
+
+<!-- Generate Draft -->
+<div class="card">
+  <h2>Generate Email Draft</h2>
+  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+    {% for t in templates %}
+    <a href="/candidates/{{ candidate.id }}/draft/{{ t.id }}" class="btn btn-outline btn-sm">{{ t.name }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Interviews -->
+<div class="card">
+  <div class="flex-between">
+    <h2>Interviews</h2>
+    <a href="/candidates/{{ candidate.id }}/interviews/new" class="btn btn-sm">+ Schedule Interview</a>
+  </div>
+  {% if candidate.interviews %}
+  <table>
+    <tr><th>Type</th><th>Date/Time</th><th>Location</th><th>Attendees</th><th></th></tr>
+    {% for iv in candidate.interviews %}
+    <tr>
+      <td>{{ iv.interview_type }}</td>
+      <td>{{ iv.dt_start.strftime('%Y-%m-%d %H:%M') }} — {{ iv.dt_end.strftime('%H:%M') }} ({{ iv.timezone }})</td>
+      <td>{{ iv.location or '—' }}</td>
+      <td>{{ iv.attendees or '—' }}</td>
+      <td><a href="/interviews/{{ iv.id }}/ics" class="btn btn-outline btn-sm">Download .ics</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:var(--muted);">No interviews scheduled yet.</p>
+  {% endif %}
+</div>
+
+<!-- Notes -->
+<div class="card">
+  <h2>Notes</h2>
+  <form method="post" action="/candidates/{{ candidate.id }}/notes" style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+    <textarea name="content" placeholder="Add a note..." style="flex:1; min-height:40px;" required></textarea>
+    <button type="submit" class="btn" style="align-self:end;">Add Note</button>
+  </form>
+  <div class="note-thread">
+    {% for n in candidate.notes %}
+    <div class="note-item">
+      <div>{{ n.content }}</div>
+      <div class="note-meta">{{ n.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+    </div>
+    {% else %}
+    <p style="color:var(--muted);">No notes yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

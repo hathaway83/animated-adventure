@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Email Templates — Mini ATS{% endblock %}
+{% block content %}
+<h1>Email Templates</h1>
+<p style="color:var(--muted); margin-bottom:1rem;">
+  To generate a draft, go to a candidate's detail page and click one of the template buttons.
+</p>
+{% for t in templates %}
+<div class="card">
+  <h3>{{ t.name }}</h3>
+  <p><strong>Subject:</strong> {{ t.subject }}</p>
+  <div class="draft-box">{{ t.body }}</div>
+</div>
+{% endfor %}
+{% endblock %}

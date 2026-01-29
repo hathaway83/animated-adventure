@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Mini ATS{% endblock %}
+{% block content %}
+<div class="flex-between">
+  <h1>Pipeline Dashboard</h1>
+  <a href="/candidates/new" class="btn">+ New Candidate</a>
+</div>
+
+<div class="pipeline-bar">
+  {% for item in pipeline %}
+  <a href="/candidates?stage_id={{ item.id }}" style="text-decoration:none; color:inherit;">
+    <div class="pipeline-item">
+      <div class="count">{{ item.count }}</div>
+      <div class="label">{{ item.name }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if overdue %}
+<div class="card">
+  <h2>Overdue Next Steps <span class="badge badge-danger">{{ overdue|length }}</span></h2>
+  <table>
+    <tr><th>Candidate</th><th>Role</th><th>Next Step</th><th>Due Date</th></tr>
+    {% for c in overdue %}
+    <tr>
+      <td><a href="/candidates/{{ c.id }}">{{ c.full_name }}</a></td>
+      <td>{{ c.role }}</td>
+      <td>{{ c.next_step or '—' }}</td>
+      <td style="color:var(--danger);">{{ c.next_step_due_date }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if stale %}
+<div class="card">
+  <h2>Stale Candidates <span class="badge badge-warning">{{ stale|length }}</span></h2>
+  <table>
+    <tr><th>Candidate</th><th>Role</th><th>Stage</th><th>Last Touch</th><th>Business Days</th></tr>
+    {% for c in stale %}
+    <tr>
+      <td><a href="/candidates/{{ c.id }}">{{ c.full_name }}</a></td>
+      <td>{{ c.role }}</td>
+      <td>{{ c.stage_rel.name }}</td>
+      <td>{{ c.last_touch_date or '—' }}</td>
+      <td>{{ c.stale_days }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if not overdue and not stale %}
+<div class="card"><p>No overdue or stale candidates. You're all caught up.</p></div>
+{% endif %}
+{% endblock %}

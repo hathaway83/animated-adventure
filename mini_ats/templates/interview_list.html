@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Interviews — Mini ATS{% endblock %}
+{% block content %}
+<h1>All Interviews</h1>
+<table>
+  <tr><th>Candidate</th><th>Role</th><th>Type</th><th>Date/Time</th><th>Location</th><th></th></tr>
+  {% for iv in interviews %}
+  <tr>
+    <td><a href="/candidates/{{ iv.candidate.id }}">{{ iv.candidate.full_name }}</a></td>
+    <td>{{ iv.candidate.role }}</td>
+    <td>{{ iv.interview_type }}</td>
+    <td>{{ iv.dt_start.strftime('%Y-%m-%d %H:%M') }} — {{ iv.dt_end.strftime('%H:%M') }} ({{ iv.timezone }})</td>
+    <td>{{ iv.location or '—' }}</td>
+    <td><a href="/interviews/{{ iv.id }}/ics" class="btn btn-outline btn-sm">Download .ics</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6">No interviews scheduled.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

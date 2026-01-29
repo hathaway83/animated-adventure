@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Reports — Mini ATS{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+
+<div class="card">
+  <h2>Pipeline by Stage</h2>
+  <table>
+    <tr><th>Stage</th><th>Active Candidates</th><th>Avg Days Since Last Touch</th></tr>
+    {% for s in stage_stats %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{{ s.count }}</td>
+      <td>{{ s.avg_days }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <div class="flex-between">
+    <h2>Stuck Candidates (Overdue or Stale) <span class="badge badge-warning">{{ stuck|length }}</span></h2>
+    <a href="/reports/stuck/export" class="btn btn-outline btn-sm">Export CSV</a>
+  </div>
+  {% if stuck %}
+  <table>
+    <tr><th>Name</th><th>Role</th><th>Stage</th><th>Next Step</th><th>Due Date</th><th>Last Touch</th><th>Status</th></tr>
+    {% for c in stuck %}
+    <tr>
+      <td><a href="/candidates/{{ c.id }}">{{ c.full_name }}</a></td>
+      <td>{{ c.role }}</td>
+      <td>{{ c.stage_rel.name }}</td>
+      <td>{{ c.next_step or '—' }}</td>
+      <td>{{ c.next_step_due_date or '—' }}</td>
+      <td>{{ c.last_touch_date or '—' }}</td>
+      <td>
+        {% if c.is_overdue %}<span class="badge badge-danger">Overdue</span> {% endif %}
+        {% if c.is_stale %}<span class="badge badge-warning">Stale</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:var(--muted);">No stuck candidates.</p>
+  {% endif %}
+</div>
+
+{% if offer_stats %}
+<div class="card">
+  <h2>Time to Offer/Hired</h2>
+  <table>
+    <tr><th>Candidate</th><th>Role</th><th>Days from Applied to Current Stage</th></tr>
+    {% for o in offer_stats %}
+    <tr><td>{{ o.name }}</td><td>{{ o.role }}</td><td>{{ o.days }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

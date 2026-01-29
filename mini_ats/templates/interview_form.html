@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Schedule Interview — Mini ATS{% endblock %}
+{% block content %}
+<h1>Schedule Interview for {{ candidate.full_name }}</h1>
+<div class="card">
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Interview Type *</label>
+        <select name="interview_type" required>
+          <option value="Recruiter Screen">Recruiter Screen</option>
+          <option value="Hiring Manager Screen">Hiring Manager Screen</option>
+          <option value="Technical Interview">Technical Interview</option>
+          <option value="Onsite Panel">Onsite Panel</option>
+          <option value="Final Interview">Final Interview</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Timezone</label>
+        <select name="timezone">
+          <option value="US/Pacific" selected>US/Pacific</option>
+          <option value="US/Mountain">US/Mountain</option>
+          <option value="US/Central">US/Central</option>
+          <option value="US/Eastern">US/Eastern</option>
+          <option value="UTC">UTC</option>
+          <option value="Europe/London">Europe/London</option>
+          <option value="Asia/Kolkata">Asia/Kolkata</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Start Date/Time *</label>
+        <input type="datetime-local" name="dt_start" required>
+      </div>
+      <div class="form-group">
+        <label>End Date/Time *</label>
+        <input type="datetime-local" name="dt_end" required>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Location / Video Link</label>
+      <input type="text" name="location" placeholder="e.g. Conference Room A, or Teams link">
+    </div>
+    <div class="form-group">
+      <label>Attendees (comma-separated emails)</label>
+      <input type="text" name="attendees" placeholder="interviewer@company.com, hiring.manager@company.com">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea name="notes" placeholder="Any additional context..."></textarea>
+    </div>
+    <button type="submit" class="btn">Schedule Interview</button>
+    <a href="/candidates/{{ candidate.id }}" class="btn btn-outline">Cancel</a>
+  </form>
+</div>
+{% endblock %}

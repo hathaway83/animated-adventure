@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Candidates — Mini ATS{% endblock %}
+{% block content %}
+<div class="flex-between">
+  <h1>Candidates</h1>
+  <div>
+    <a href="/candidates/export" class="btn btn-outline btn-sm">Export CSV</a>
+    <a href="/candidates/new" class="btn btn-sm">+ New</a>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/candidates" style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:end;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Name, email, role...">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Stage</label>
+      <select name="stage_id">
+        <option value="">All</option>
+        {% for s in stages %}
+        <option value="{{ s.id }}" {% if stage_id == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Role</label>
+      <select name="role">
+        <option value="">All</option>
+        {% for r in roles %}
+        <option value="{{ r }}" {% if role == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>View</label>
+      <select name="view">
+        <option value="">All</option>
+        <option value="overdue" {% if view == 'overdue' %}selected{% endif %}>Overdue</option>
+        <option value="stale" {% if view == 'stale' %}selected{% endif %}>Stale (5+ biz days)</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-sm" style="height:34px;">Filter</button>
+  </form>
+</div>
+
+<table>
+  <tr>
+    <th>Name</th><th>Role</th><th>Stage</th><th>Hiring Manager</th>
+    <th>Last Touch</th><th>Next Step Due</th><th>Status</th>
+  </tr>
+  {% for c in candidates %}
+  <tr>
+    <td><a href="/candidates/{{ c.id }}">{{ c.full_name }}</a></td>
+    <td>{{ c.role }}</td>
+    <td><span class="badge badge-primary">{{ c.stage_rel.name }}</span></td>
+    <td>{{ c.hiring_manager or '—' }}</td>
+    <td>{{ c.last_touch_date or '—' }}</td>
+    <td>{{ c.next_step_due_date or '—' }}</td>
+    <td>
+      {% if c.is_overdue %}<span class="badge badge-danger">Overdue</span>{% endif %}
+      {% if c.is_stale %}<span class="badge badge-warning">Stale</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7">No candidates found.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

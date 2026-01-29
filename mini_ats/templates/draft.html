@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Draft: {{ template.name }} — Mini ATS{% endblock %}
+{% block content %}
+<h1>Email Draft for {{ candidate.full_name }}</h1>
+<p style="color:var(--muted);">Template: {{ template.name }}</p>
+
+<div class="card">
+  <h3>Outlook-Friendly Copy</h3>
+  <p style="margin-bottom:0.5rem;">Copy the subject and body below into your email client.</p>
+
+  <div class="form-group">
+    <label>Subject Line</label>
+    <input type="text" value="{{ subject }}" id="subject-field" readonly onclick="this.select()">
+  </div>
+
+  <div class="form-group">
+    <label>Body</label>
+    <div class="draft-box" id="body-field">{{ body }}</div>
+  </div>
+
+  <button class="btn btn-sm" onclick="copyDraft()">Copy Body to Clipboard</button>
+  <a href="/candidates/{{ candidate.id }}" class="btn btn-outline btn-sm">Back to Candidate</a>
+</div>
+
+<script>
+function copyDraft() {
+  const text = document.getElementById('body-field').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Body copied to clipboard!');
+  });
+}
+</script>
+{% endblock %}

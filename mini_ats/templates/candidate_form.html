@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if candidate else "New" }} Candidate — Mini ATS{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if candidate else "New" }} Candidate</h1>
+<div class="card">
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Full Name *</label>
+        <input type="text" name="full_name" value="{{ candidate.full_name if candidate else '' }}" required>
+      </div>
+      <div class="form-group">
+        <label>Email *</label>
+        <input type="email" name="email" value="{{ candidate.email if candidate else '' }}" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" name="phone" value="{{ candidate.phone if candidate else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Role *</label>
+        <input type="text" name="role" value="{{ candidate.role if candidate else '' }}" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Stage *</label>
+        <select name="stage_id" required>
+          {% for s in stages %}
+          <option value="{{ s.id }}" {% if candidate and candidate.stage_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Source</label>
+        <input type="text" name="source" value="{{ candidate.source if candidate else '' }}" placeholder="e.g. LinkedIn, Referral">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Hiring Manager</label>
+        <input type="text" name="hiring_manager" value="{{ candidate.hiring_manager if candidate else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Recruiter</label>
+        <input type="text" name="recruiter" value="{{ candidate.recruiter if candidate else '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Last Touch Date</label>
+        <input type="date" name="last_touch_date" value="{{ candidate.last_touch_date if candidate and candidate.last_touch_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Next Step</label>
+        <input type="text" name="next_step" value="{{ candidate.next_step if candidate else '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Next Step Due Date</label>
+        <input type="date" name="next_step_due_date" value="{{ candidate.next_step_due_date if candidate and candidate.next_step_due_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>LinkedIn URL</label>
+        <input type="url" name="linkedin_url" value="{{ candidate.linkedin_url if candidate else '' }}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Resume URL</label>
+      <input type="url" name="resume_url" value="{{ candidate.resume_url if candidate else '' }}">
+    </div>
+    <button type="submit" class="btn">{{ "Save Changes" if candidate else "Create Candidate" }}</button>
+    {% if candidate %}
+    <a href="/candidates/{{ candidate.id }}" class="btn btn-outline">Cancel</a>
+    {% else %}
+    <a href="/candidates" class="btn btn-outline">Cancel</a>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Mini ATS{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --card: #ffffff;
+      --primary: #3b5998;
+      --primary-hover: #2d4373;
+      --danger: #c0392b;
+      --warning: #e67e22;
+      --success: #27ae60;
+      --text: #2c3e50;
+      --muted: #7f8c8d;
+      --border: #dcdde1;
+      --radius: 6px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    nav {
+      background: var(--primary);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      height: 52px;
+    }
+    nav a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      opacity: 0.85;
+    }
+    nav a:hover, nav a.active { opacity: 1; }
+    nav .brand { font-weight: 700; font-size: 1.05rem; opacity: 1; margin-right: 1rem; }
+    .container { max-width: 1100px; margin: 1.5rem auto; padding: 0 1.5rem; }
+    h1, h2, h3 { margin-bottom: 0.75rem; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.25rem; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th { font-weight: 600; background: var(--bg); }
+    tr:hover { background: #f0f1f5; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .badge-primary { background: var(--primary); }
+    .badge-danger { background: var(--danger); }
+    .badge-warning { background: var(--warning); }
+    .badge-success { background: var(--success); }
+    .badge-muted { background: var(--muted); }
+
+    .btn {
+      display: inline-block;
+      padding: 0.4rem 1rem;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      color: #fff;
+      background: var(--primary);
+      transition: background 0.15s;
+    }
+    .btn:hover { background: var(--primary-hover); }
+    .btn-sm { padding: 0.25rem 0.65rem; font-size: 0.8rem; }
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #a93226; }
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--primary);
+    }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+
+    .form-group { margin-bottom: 0.85rem; }
+    .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.2rem; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+    .form-row { display: flex; gap: 1rem; }
+    .form-row .form-group { flex: 1; }
+
+    .flash {
+      padding: 0.6rem 1rem;
+      border-radius: var(--radius);
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    .flash-success { background: #d4edda; color: #155724; }
+    .flash-info { background: #d1ecf1; color: #0c5460; }
+    .flash-error { background: #f8d7da; color: #721c24; }
+
+    .pipeline-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .pipeline-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.75rem 1.25rem;
+      text-align: center;
+      min-width: 110px;
+    }
+    .pipeline-item .count { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
+    .pipeline-item .label { font-size: 0.78rem; color: var(--muted); }
+
+    .draft-box {
+      background: #fafafa;
+      border: 1px solid var(--border);
+      padding: 1rem;
+      font-family: "Courier New", monospace;
+      white-space: pre-wrap;
+      font-size: 0.88rem;
+      border-radius: var(--radius);
+    }
+
+    .note-thread { margin-top: 0.5rem; }
+    .note-item {
+      border-left: 3px solid var(--primary);
+      padding: 0.4rem 0.75rem;
+      margin-bottom: 0.6rem;
+      background: #f9fafe;
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+    .note-meta { font-size: 0.75rem; color: var(--muted); }
+
+    a { color: var(--primary); }
+    .mt-1 { margin-top: 1rem; }
+    .mb-1 { margin-bottom: 1rem; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="brand" href="/">Mini ATS</a>
+    <a href="/">Dashboard</a>
+    <a href="/candidates">Candidates</a>
+    <a href="/interviews">Interviews</a>
+    <a href="/templates">Templates</a>
+    <a href="/reports">Reports</a>
+  </nav>
+  <div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="flash flash-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
