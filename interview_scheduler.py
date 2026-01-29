@@ -3,6 +3,8 @@
 
 Generates proposed time slots, email drafts, and .ics calendar invites
 for interview scheduling. No external APIs or ATS required.
+
+Run with no arguments for an interactive guided walkthrough.
 """
 
 import argparse
@@ -22,6 +24,108 @@ HISTORY_FILE = Path("schedule_history.json")
 DATETIME_FMT = "%Y%m%dT%H%M%SZ"
 DISPLAY_FMT = "%A, %B %d, %Y %I:%M %p"
 
+INTERVIEW_TYPES = {
+    "1": "screen",
+    "2": "onsite",
+    "3": "panel",
+    "screen": "screen",
+    "onsite": "onsite",
+    "panel": "panel",
+}
+
+TZ_CHOICES = {
+    "1": ("US/Eastern", "EST, UTC-5"),
+    "2": ("US/Central", "CST, UTC-6"),
+    "3": ("US/Mountain", "MST, UTC-7"),
+    "4": ("US/Pacific", "PST, UTC-8"),
+    "5": ("UTC", "UTC"),
+    "6": ("Europe/London", "GMT, UTC+0"),
+    "7": ("Europe/Berlin", "CET, UTC+1"),
+    "8": ("Asia/Kolkata", "IST, UTC+5:30"),
+    "9": ("Asia/Tokyo", "JST, UTC+9"),
+    "10": ("Australia/Sydney", "AEDT, UTC+11"),
+}
+
+TZ_OFFSETS = {
+    "US/Eastern": -5,
+    "US/Central": -6,
+    "US/Mountain": -7,
+    "US/Pacific": -8,
+    "UTC": 0,
+    "Europe/London": 0,
+    "Europe/Berlin": 1,
+    "Asia/Kolkata": 5.5,
+    "Asia/Tokyo": 9,
+    "Australia/Sydney": 11,
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _hr():
+    print("-" * 60)
+
+
+def _banner(text):
+    print()
+    print("=" * 60)
+    print(f"  {text}")
+    print("=" * 60)
+
+
+def _ask(prompt, default=None, required=True):
+    """Prompt the user with optional default. Loops until a value is given."""
+    suffix = f" [{default}]" if default else ""
+    while True:
+        val = input(f"  {prompt}{suffix}: ").strip()
+        if not val and default:
+            return default
+        if val:
+            return val
+        if not required:
+            return ""
+        print("    ^ This field is required. Please enter a value.")
+
+
+def _ask_choice(prompt, options_dict, default=None):
+    """Prompt user to pick from numbered options."""
+    suffix = f" [{default}]" if default else ""
+    while True:
+        val = input(f"  {prompt}{suffix}: ").strip()
+        if not val and default:
+            val = default
+        if val in options_dict:
+            return options_dict[val]
+        print(f"    ^ Please enter one of: {', '.join(options_dict.keys())}")
+
+
+def _ask_date(prompt, default=None):
+    """Prompt for a date in YYYY-MM-DD format."""
+    suffix = f" [{default}]" if default else ""
+    while True:
+        val = input(f"  {prompt}{suffix}: ").strip()
+        if not val and default:
+            val = default
+        try:
+            return datetime.strptime(val, "%Y-%m-%d").date()
+        except ValueError:
+            print("    ^ Please enter a date in YYYY-MM-DD format (e.g. 2026-02-10)")
+
+
+def _ask_int(prompt, default=None):
+    suffix = f" [{default}]" if default else ""
+    while True:
+        val = input(f"  {prompt}{suffix}: ").strip()
+        if not val and default is not None:
+            return default
+        try:
+            return int(val)
+        except ValueError:
+            print("    ^ Please enter a number.")
+
+
 # ---------------------------------------------------------------------------
 # ICS generation
 # ---------------------------------------------------------------------------
@@ -38,9 +142,6 @@ def _ics_event(
 ) -> str:
     uid = str(uuid.uuid4())
     now = datetime.now(timezone.utc).strftime(DATETIME_FMT)
-    attendee_lines = "\n".join(
-        f"ATTENDEE;RSVP=TRUE;CN={email}:mailto:{email}" for email in attendees
-    )
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -77,20 +178,6 @@ def save_ics(path: Path, content: str) -> None:
 # Slot proposal logic
 # ---------------------------------------------------------------------------
 
-# Timezone offsets (hours from UTC) for common zones. Extend as needed.
-TZ_OFFSETS = {
-    "US/Eastern": -5,
-    "US/Central": -6,
-    "US/Mountain": -7,
-    "US/Pacific": -8,
-    "UTC": 0,
-    "Europe/London": 0,
-    "Europe/Berlin": 1,
-    "Asia/Kolkata": 5.5,
-    "Asia/Tokyo": 9,
-    "Australia/Sydney": 11,
-}
-
 
 def _utc_offset_hours(tz_name: str) -> float:
     return TZ_OFFSETS.get(tz_name, 0)
@@ -106,19 +193,14 @@ def propose_slots(
     candidate_tz: str,
     count: int = 3,
 ) -> list[dict]:
-    """Return *count* proposed interview slots spread across days/times.
-
-    All returned datetimes are UTC.  The algorithm picks morning, midday, and
-    late-afternoon windows across the available date range.
-    """
+    """Return *count* proposed interview slots spread across days/times."""
     offset = _utc_offset_hours(candidate_tz)
     total_block = duration_min + buffer_min
 
-    # Build candidate local hours for variety: morning, midday, late
     target_local_hours = [
         work_start_hour + 1,                            # morning
         (work_start_hour + work_end_hour) // 2,         # midday
-        work_end_hour - (total_block // 60) - 1,        # late
+        work_end_hour - (total_block // 60) - 1,        # late afternoon
     ]
 
     available_days: list[date] = []
@@ -136,7 +218,6 @@ def propose_slots(
     hour_idx = 0
     while len(slots) < count and day_idx < len(available_days):
         local_hour = target_local_hours[hour_idx % len(target_local_hours)]
-        # Clamp to working hours
         end_hour_needed = local_hour + total_block / 60
         if local_hour < work_start_hour or end_hour_needed > work_end_hour:
             hour_idx += 1
@@ -180,12 +261,12 @@ def candidate_email_draft(
     candidate_tz: str,
 ) -> str:
     options = "\n".join(
-        f"  Option {s['option']}: {s['start_local'].strftime(DISPLAY_FMT)} – "
+        f"  Option {s['option']}: {s['start_local'].strftime(DISPLAY_FMT)} - "
         f"{s['end_local'].strftime('%-I:%M %p')} ({candidate_tz})"
         for s in slots
     )
     return (
-        f"Subject: Interview Scheduling — {role}\n"
+        f"Subject: Interview Scheduling - {role}\n"
         f"\n"
         f"Hi {candidate_name},\n"
         f"\n"
@@ -221,7 +302,7 @@ def internal_email_draft(
         for s in slots
     )
     return (
-        f"Subject: [Internal] Interview Panel Confirmation — {candidate_name} for {role}\n"
+        f"Subject: [Internal] Interview Panel Confirmation - {candidate_name} for {role}\n"
         f"\n"
         f"Hi Team,\n"
         f"\n"
@@ -239,6 +320,91 @@ def internal_email_draft(
         f"will follow once the candidate confirms.\n"
         f"\n"
         f"Thanks,\n"
+        f"Recruiting Team"
+    )
+
+
+def reschedule_email_draft(
+    candidate_name: str,
+    role: str,
+    new_slots: list[dict],
+    location: str,
+    candidate_tz: str,
+) -> str:
+    options = "\n".join(
+        f"  Option {s['option']}: {s['start_local'].strftime(DISPLAY_FMT)} - "
+        f"{s['end_local'].strftime('%-I:%M %p')} ({candidate_tz})"
+        for s in new_slots
+    )
+    return (
+        f"Subject: Updated Interview Times - {role}\n"
+        f"\n"
+        f"Hi {candidate_name},\n"
+        f"\n"
+        f"We need to adjust the interview schedule for the {role} position.\n"
+        f"Apologies for any inconvenience.\n"
+        f"\n"
+        f"Here are the updated time options:\n"
+        f"\n"
+        f"{options}\n"
+        f"\n"
+        f"Location / Link: {location}\n"
+        f"\n"
+        f"Please reply with your preferred option or suggest an alternative.\n"
+        f"\n"
+        f"Best regards,\n"
+        f"Recruiting Team"
+    )
+
+
+def cancellation_email_draft(candidate_name: str, role: str) -> str:
+    return (
+        f"Subject: Interview Update - {role}\n"
+        f"\n"
+        f"Hi {candidate_name},\n"
+        f"\n"
+        f"Thank you for your time and interest in the {role} position.\n"
+        f"Unfortunately, we need to cancel the upcoming interview.\n"
+        f"\n"
+        f"We apologize for the inconvenience and will reach out if we would\n"
+        f"like to reschedule in the future.\n"
+        f"\n"
+        f"Best regards,\n"
+        f"Recruiting Team"
+    )
+
+
+def confirmation_email_draft(
+    candidate_name: str,
+    role: str,
+    interview_type: str,
+    slot: dict,
+    location: str,
+    candidate_tz: str,
+    panelists: list[dict],
+) -> str:
+    time_str = (
+        f"{slot['start_local'].strftime(DISPLAY_FMT)} - "
+        f"{slot['end_local'].strftime('%-I:%M %p')} ({candidate_tz})"
+    )
+    panel_str = ", ".join(p["name"] for p in panelists)
+    return (
+        f"Subject: Interview Confirmed - {role}\n"
+        f"\n"
+        f"Hi {candidate_name},\n"
+        f"\n"
+        f"Your {interview_type} interview for the {role} position is confirmed:\n"
+        f"\n"
+        f"  Date/Time: {time_str}\n"
+        f"  Location:  {location}\n"
+        f"  Panel:     {panel_str}\n"
+        f"\n"
+        f"A calendar invite is attached. Please let us know if you have any\n"
+        f"questions beforehand.\n"
+        f"\n"
+        f"Good luck!\n"
+        f"\n"
+        f"Best regards,\n"
         f"Recruiting Team"
     )
 
@@ -263,6 +429,33 @@ def log_schedule(entry: dict) -> None:
     entry["logged_at"] = datetime.now(timezone.utc).isoformat()
     history.append(entry)
     _save_history(history)
+
+
+def show_history() -> None:
+    """Display past scheduled interviews."""
+    history = _load_history()
+    if not history:
+        print("\n  No scheduling history found yet.")
+        return
+
+    _banner("SCHEDULING HISTORY")
+    for i, record in enumerate(history, 1):
+        status = record.get("status", "proposed")
+        print(f"\n  #{i}  {record['candidate_name']} - {record['role']}")
+        print(f"      Type: {record['interview_type']}  |  Status: {status}")
+        print(f"      Logged: {record['logged_at'][:16].replace('T', ' ')} UTC")
+        if record.get("panelists"):
+            names = ", ".join(p["name"] for p in record["panelists"])
+            print(f"      Panel: {names}")
+        if record.get("slots"):
+            for s in record["slots"]:
+                start = s.get("start_utc", "?")
+                if isinstance(start, str) and len(start) > 10:
+                    start = start[:16].replace("T", " ")
+                print(f"      Option {s['option']}: {start} UTC")
+        if record.get("confirmed_option"):
+            print(f"      >>> Confirmed: Option {record['confirmed_option']}")
+    print()
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +505,7 @@ def run_schedule(params: dict) -> None:
         p["email"] for p in params["panelists"]
     ]
     organizer = params["panelists"][0]["email"] if params["panelists"] else "recruiter@example.com"
-    summary = f"{params['interview_type'].title()} Interview — {params['candidate_name']} for {params['role']}"
+    summary = f"{params['interview_type'].title()} Interview - {params['candidate_name']} for {params['role']}"
 
     for s in slots:
         ics = _ics_event(
@@ -327,58 +520,69 @@ def run_schedule(params: dict) -> None:
         ics_path = OUTPUT_DIR / f"option_{s['option']}.ics"
         save_ics(ics_path, ics)
 
-    # --- Print results ---
-    print("=" * 60)
-    print("  INTERVIEW SCHEDULING HELPER")
-    print("=" * 60)
-    print(f"\nCandidate : {params['candidate_name']} ({params['candidate_email']})")
-    print(f"Role      : {params['role']}")
-    print(f"Type      : {params['interview_type']}")
-    print(f"Duration  : {params['duration_min']} min + {params['buffer_min']} min buffer")
-    print(f"Location  : {params['location']}")
-    print()
-
-    print("Proposed slots:")
+    # --- Print summary ---
+    _banner("SCHEDULE CREATED")
+    print(f"""
+  Candidate : {params['candidate_name']} ({params['candidate_email']})
+  Role      : {params['role']}
+  Type      : {params['interview_type']}
+  Duration  : {params['duration_min']} min + {params['buffer_min']} min buffer
+  Location  : {params['location']}
+  Panel     : {', '.join(p['name'] for p in params['panelists'])}
+""")
+    _hr()
+    print("  PROPOSED TIME SLOTS")
+    _hr()
     for s in slots:
         print(
-            f"  Option {s['option']}: {s['start_local'].strftime(DISPLAY_FMT)} – "
+            f"    Option {s['option']}:  {s['start_local'].strftime(DISPLAY_FMT)} - "
             f"{s['end_local'].strftime('%-I:%M %p')} ({params['candidate_tz']})"
         )
     print()
-
-    print(f"Candidate email draft → {cand_path}")
-    print(f"Internal email draft  → {int_path}")
+    _hr()
+    print("  FILES SAVED")
+    _hr()
+    print(f"    Candidate email  : {cand_path}")
+    print(f"    Internal email   : {int_path}")
     for s in slots:
         opt = s['option']
-        print(f"ICS Option {opt}          → {OUTPUT_DIR / f'option_{opt}.ics'}")
+        print(f"    Calendar Option {opt}: {OUTPUT_DIR / f'option_{opt}.ics'}")
     print()
 
     # --- Log ---
-    log_schedule(
-        {
-            "candidate_name": params["candidate_name"],
-            "candidate_email": params["candidate_email"],
-            "role": params["role"],
-            "interview_type": params["interview_type"],
-            "panelists": params["panelists"],
-            "slots": [
-                {
-                    "option": s["option"],
-                    "start_utc": s["start_utc"].isoformat(),
-                    "end_utc": s["end_utc"].isoformat(),
-                }
-                for s in slots
-            ],
-        }
-    )
-    print(f"History log updated   → {HISTORY_FILE}")
+    log_entry = {
+        "candidate_name": params["candidate_name"],
+        "candidate_email": params["candidate_email"],
+        "role": params["role"],
+        "interview_type": params["interview_type"],
+        "panelists": params["panelists"],
+        "status": "proposed",
+        "slots": [
+            {
+                "option": s["option"],
+                "start_utc": s["start_utc"].isoformat(),
+                "end_utc": s["end_utc"].isoformat(),
+            }
+            for s in slots
+        ],
+    }
 
-    # --- Confirm a slot interactively ---
+    # --- Confirm, reschedule, or cancel ---
     if sys.stdin.isatty():
+        _hr()
+        print("  NEXT STEPS")
+        _hr()
+        print("    1-3  Confirm a time slot (generates confirmation email + invite)")
+        print("    r    Generate reschedule email")
+        print("    c    Generate cancellation email")
+        print("    Enter to finish")
         print()
-        choice = input(f"Confirm a slot (1-{len(slots)}) or press Enter to skip: ").strip()
+        choice = input("  Your choice: ").strip().lower()
+
         if choice.isdigit() and 1 <= int(choice) <= len(slots):
             chosen = slots[int(choice) - 1]
+
+            # Confirmation .ics
             confirmed_ics = _ics_event(
                 summary=f"[CONFIRMED] {summary}",
                 start_utc=chosen["start_utc"],
@@ -390,11 +594,194 @@ def run_schedule(params: dict) -> None:
             )
             confirmed_path = OUTPUT_DIR / "confirmed.ics"
             save_ics(confirmed_path, confirmed_ics)
-            print(f"\nConfirmed slot {choice} → {confirmed_path}")
+
+            # Confirmation email
+            conf_email = confirmation_email_draft(
+                candidate_name=params["candidate_name"],
+                role=params["role"],
+                interview_type=params["interview_type"],
+                slot=chosen,
+                location=params["location"],
+                candidate_tz=params["candidate_tz"],
+                panelists=params["panelists"],
+            )
+            conf_email_path = OUTPUT_DIR / "confirmation_email.txt"
+            conf_email_path.write_text(conf_email)
+
+            log_entry["status"] = "confirmed"
+            log_entry["confirmed_option"] = int(choice)
+
+            print()
+            _hr()
+            print(f"  CONFIRMED: Option {choice}")
+            _hr()
+            print(
+                f"    {chosen['start_local'].strftime(DISPLAY_FMT)} - "
+                f"{chosen['end_local'].strftime('%-I:%M %p')} ({params['candidate_tz']})"
+            )
+            print()
+            print(f"    Confirmation email : {conf_email_path}")
+            print(f"    Calendar invite    : {confirmed_path}")
+            print()
+            print("    Next: Open the .ics file to add to Outlook, then copy/paste")
+            print("    the confirmation email to send to the candidate.")
+            print()
+
+        elif choice == "r":
+            resched = reschedule_email_draft(
+                candidate_name=params["candidate_name"],
+                role=params["role"],
+                new_slots=slots,
+                location=params["location"],
+                candidate_tz=params["candidate_tz"],
+            )
+            resched_path = OUTPUT_DIR / "reschedule_email.txt"
+            resched_path.write_text(resched)
+            log_entry["status"] = "rescheduling"
+            print(f"\n  Reschedule email saved: {resched_path}\n")
+
+        elif choice == "c":
+            cancel = cancellation_email_draft(
+                candidate_name=params["candidate_name"],
+                role=params["role"],
+            )
+            cancel_path = OUTPUT_DIR / "cancellation_email.txt"
+            cancel_path.write_text(cancel)
+            log_entry["status"] = "cancelled"
+            print(f"\n  Cancellation email saved: {cancel_path}\n")
+
+    log_schedule(log_entry)
+    print(f"  History log updated: {HISTORY_FILE}")
+    print()
 
 
 # ---------------------------------------------------------------------------
-# Sample / hardcoded data (MVP)
+# Interactive guided mode
+# ---------------------------------------------------------------------------
+
+
+def interactive_mode() -> None:
+    """Walk the user through scheduling step by step."""
+    _banner("INTERVIEW SCHEDULING HELPER")
+    print()
+    print("  Let's schedule an interview! I'll walk you through it step by step.")
+    print("  (Press Ctrl+C at any time to cancel.)")
+    print()
+
+    # --- Candidate info ---
+    _hr()
+    print("  STEP 1: CANDIDATE INFO")
+    _hr()
+    candidate_name = _ask("Candidate's full name")
+    candidate_email = _ask("Candidate's email")
+
+    print()
+    print("  Candidate timezone:")
+    for key, (tz_name, tz_desc) in TZ_CHOICES.items():
+        print(f"    {key:>2}. {tz_name} ({tz_desc})")
+    print()
+    tz_result = _ask_choice("Pick a number or type timezone name", {
+        **{k: v[0] for k, v in TZ_CHOICES.items()},
+        **{v[0]: v[0] for v in TZ_CHOICES.values()},
+    }, default="1")
+
+    print()
+    _hr()
+    print("  STEP 2: ROLE & INTERVIEW TYPE")
+    _hr()
+    role = _ask("Job title / role")
+    print()
+    print("  Interview type:")
+    print("    1. Phone screen")
+    print("    2. Onsite")
+    print("    3. Panel")
+    print()
+    interview_type = _ask_choice("Pick a number", INTERVIEW_TYPES, default="1")
+
+    print()
+    _hr()
+    print("  STEP 3: INTERVIEW PANEL")
+    _hr()
+    print("  Enter interviewers one at a time. Leave name blank when done.")
+    print()
+    panelists = []
+    while True:
+        name = _ask(f"Interviewer {len(panelists)+1} name (blank to finish)", required=False)
+        if not name:
+            if not panelists:
+                print("    You need at least one interviewer.")
+                continue
+            break
+        email = _ask(f"  {name}'s email")
+        panelists.append({"name": name, "email": email})
+        print(f"    Added: {name} <{email}>")
+    print(f"  Panel: {', '.join(p['name'] for p in panelists)}")
+
+    print()
+    _hr()
+    print("  STEP 4: SCHEDULING CONSTRAINTS")
+    _hr()
+    today_str = date.today().strftime("%Y-%m-%d")
+    next_week = (date.today() + timedelta(days=7)).strftime("%Y-%m-%d")
+    two_weeks = (date.today() + timedelta(days=14)).strftime("%Y-%m-%d")
+
+    print(f"  Today is {today_str}")
+    start_date = _ask_date("Earliest date (YYYY-MM-DD)", default=next_week)
+    end_date = _ask_date("Latest date (YYYY-MM-DD)", default=two_weeks)
+    print()
+    work_start = _ask_int("Work day starts at (hour, 24h format)", default=9)
+    work_end = _ask_int("Work day ends at (hour, 24h format)", default=17)
+    duration = _ask_int("Interview length in minutes", default=60)
+    buffer_time = _ask_int("Buffer time after interview (minutes)", default=15)
+
+    print()
+    _hr()
+    print("  STEP 5: LOCATION")
+    _hr()
+    location = _ask("Meeting location or video link", default="Microsoft Teams")
+
+    # --- Confirm before generating ---
+    print()
+    _hr()
+    print("  REVIEW")
+    _hr()
+    print(f"    Candidate  : {candidate_name} ({candidate_email})")
+    print(f"    Timezone   : {tz_result}")
+    print(f"    Role       : {role}")
+    print(f"    Type       : {interview_type}")
+    print(f"    Panel      : {', '.join(p['name'] for p in panelists)}")
+    print(f"    Date range : {start_date} to {end_date}")
+    print(f"    Hours      : {work_start}:00 - {work_end}:00")
+    print(f"    Duration   : {duration} min + {buffer_time} min buffer")
+    print(f"    Location   : {location}")
+    print()
+
+    confirm = input("  Look good? (Y/n): ").strip().lower()
+    if confirm == "n":
+        print("\n  Cancelled. Run again to start over.\n")
+        return
+
+    params = {
+        "candidate_name": candidate_name,
+        "candidate_email": candidate_email,
+        "candidate_tz": tz_result,
+        "role": role,
+        "interview_type": interview_type,
+        "panelists": panelists,
+        "start_date": start_date,
+        "end_date": end_date,
+        "work_start_hour": work_start,
+        "work_end_hour": work_end,
+        "duration_min": duration,
+        "buffer_min": buffer_time,
+        "location": location,
+    }
+
+    run_schedule(params)
+
+
+# ---------------------------------------------------------------------------
+# Sample data (for --demo)
 # ---------------------------------------------------------------------------
 
 SAMPLE_PARAMS = {
@@ -414,7 +801,7 @@ SAMPLE_PARAMS = {
     "work_end_hour": 17,
     "duration_min": 60,
     "buffer_min": 15,
-    "location": "Microsoft Teams — https://teams.microsoft.com/l/meetup-join/example",
+    "location": "Microsoft Teams - https://teams.microsoft.com/l/meetup-join/example",
 }
 
 
@@ -444,13 +831,15 @@ def parse_panelists(s: str) -> list[dict]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Interview Scheduling Helper — generate time options, email drafts, and .ics invites."
+        description="Interview Scheduling Helper - generate time options, email drafts, and .ics invites.",
+        epilog="Run with no arguments for interactive guided mode.",
     )
-    p.add_argument("--demo", action="store_true", help="Run with hardcoded sample data")
+    p.add_argument("--demo", action="store_true", help="Run with sample data to see how it works")
+    p.add_argument("--history", action="store_true", help="View past scheduled interviews")
     p.add_argument("--candidate-name", help="Candidate full name")
     p.add_argument("--candidate-email", help="Candidate email address")
     p.add_argument("--candidate-tz", default="US/Eastern",
-                   help="Candidate timezone (default: US/Eastern). Options: " + ", ".join(TZ_OFFSETS))
+                   help="Candidate timezone (default: US/Eastern)")
     p.add_argument("--role", help="Job role title")
     p.add_argument("--type", dest="interview_type", choices=["screen", "onsite", "panel"],
                    help="Interview type")
@@ -471,20 +860,36 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.history:
+        show_history()
+        return
+
     if args.demo:
         print("Running with sample data...\n")
         run_schedule(SAMPLE_PARAMS)
         return
 
-    # Check required args for non-demo mode
+    # If no CLI args provided, launch interactive mode
+    has_args = any(
+        getattr(args, f, None) is not None
+        for f in ["candidate_name", "candidate_email", "role", "interview_type", "panelists", "start_date", "end_date"]
+    )
+
+    if not has_args:
+        try:
+            interactive_mode()
+        except KeyboardInterrupt:
+            print("\n\n  Cancelled.\n")
+        return
+
+    # CLI flag mode - check required args
     missing = []
     for field in ["candidate_name", "candidate_email", "role", "interview_type", "panelists", "start_date", "end_date"]:
         if getattr(args, field, None) is None:
             missing.append(f"--{field.replace('_', '-')}")
     if missing:
         print(f"Error: missing required arguments: {', '.join(missing)}")
-        print("Use --demo for sample data or provide all required arguments.")
-        print("Run with --help for usage details.")
+        print("Use --demo for sample data, or just run with no arguments for guided mode.")
         sys.exit(1)
 
     params = {

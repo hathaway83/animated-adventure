@@ -1,18 +1,80 @@
 # Interview Scheduling Helper
 
-A local Python CLI tool that generates interview time proposals, email drafts, and `.ics` calendar invites for Outlook. No external APIs, no ATS, no Microsoft Graph — just standard Python.
+A friendly Python CLI tool that helps recruiters and hiring coordinators
+schedule interviews. Generates time proposals, ready-to-send email drafts,
+and Outlook-compatible `.ics` calendar invites.
+
+No external APIs, no ATS, no Microsoft Graph — just run it and go.
 
 ## Quick Start
 
 ```bash
-# Run with sample data
-python interview_scheduler.py --demo
+# Interactive guided mode — just answer the prompts
+python3 interview_scheduler.py
 
-# Run with your own data
-python interview_scheduler.py \
+# See a demo with sample data
+python3 interview_scheduler.py --demo
+
+# View past schedules
+python3 interview_scheduler.py --history
+```
+
+## What It Does
+
+1. **Walks you through the details** — candidate info, role, panel members,
+   date range, working hours, duration
+2. **Proposes 3 time slots** spread across morning, midday, and late afternoon
+   on different weekdays
+3. **Generates email drafts** you can copy/paste:
+   - Candidate email with time options
+   - Internal panel confirmation email
+   - Confirmation email (when you pick a slot)
+   - Reschedule email (if plans change)
+   - Cancellation email (if needed)
+4. **Creates `.ics` calendar files** — double-click to add to Outlook
+5. **Keeps a history log** of all schedules in `schedule_history.json`
+
+## Three Ways to Use It
+
+### 1. Interactive Mode (recommended)
+
+Just run with no arguments — it walks you through everything:
+
+```
+$ python3 interview_scheduler.py
+
+============================================================
+  INTERVIEW SCHEDULING HELPER
+============================================================
+
+  Let's schedule an interview! I'll walk you through it step by step.
+  (Press Ctrl+C at any time to cancel.)
+
+------------------------------------------------------------
+  STEP 1: CANDIDATE INFO
+------------------------------------------------------------
+  Candidate's full name: Jane Doe
+  Candidate's email: jane@example.com
+  ...
+```
+
+### 2. Demo Mode
+
+See example output without typing anything:
+
+```bash
+python3 interview_scheduler.py --demo
+```
+
+### 3. Command-Line Flags
+
+For power users or scripting:
+
+```bash
+python3 interview_scheduler.py \
   --candidate-name "Jane Doe" \
   --candidate-email "jane.doe@example.com" \
-  --candidate-tz "US/Eastern" \
+  --candidate-tz "US/Pacific" \
   --role "Senior Backend Engineer" \
   --type panel \
   --panelists "Alice Smith <alice@company.com>, Bob Jones <bob@company.com>" \
@@ -20,83 +82,56 @@ python interview_scheduler.py \
   --end-date 2026-02-13 \
   --duration 60 \
   --buffer 15 \
-  --location "Microsoft Teams — https://teams.microsoft.com/l/meetup-join/example"
+  --location "Microsoft Teams — https://teams.microsoft.com/l/meetup-join/your-link"
 ```
 
-## What It Does
+## After Generating
 
-Given candidate info, role, panel, and scheduling constraints, the tool:
+Once the tool runs, you get a **Next Steps** menu:
 
-1. **Proposes 3 time slots** spread across different days and times (morning / midday / late afternoon), within the working hours window and date range.
-2. **Generates a candidate email draft** listing the options in the candidate's timezone.
-3. **Generates an internal confirmation email draft** for the interview panel.
-4. **Creates `.ics` files** (one per option) that import cleanly into Outlook.
-5. **Optionally confirms a slot** interactively, producing a `confirmed.ics` file.
-6. **Logs all schedules** to `schedule_history.json` for reference.
+```
+------------------------------------------------------------
+  NEXT STEPS
+------------------------------------------------------------
+    1-3  Confirm a time slot (generates confirmation email + invite)
+    r    Generate reschedule email
+    c    Generate cancellation email
+    Enter to finish
+```
 
-## CLI Arguments
-
-| Argument | Required | Default | Description |
-|---|---|---|---|
-| `--demo` | — | — | Run with hardcoded sample data |
-| `--candidate-name` | Yes | — | Full name |
-| `--candidate-email` | Yes | — | Email address |
-| `--candidate-tz` | No | `US/Eastern` | Timezone (see supported list below) |
-| `--role` | Yes | — | Job title |
-| `--type` | Yes | — | `screen`, `onsite`, or `panel` |
-| `--panelists` | Yes | — | `"Name <email>, Name <email>"` |
-| `--start-date` | Yes | — | `YYYY-MM-DD` |
-| `--end-date` | Yes | — | `YYYY-MM-DD` |
-| `--work-start` | No | `9` | Start of working day (hour) |
-| `--work-end` | No | `17` | End of working day (hour) |
-| `--duration` | No | `60` | Interview length (minutes) |
-| `--buffer` | No | `15` | Buffer time after interview (minutes) |
-| `--location` | No | `Microsoft Teams` | Location or meeting link |
-
-### Supported Timezones
-
-`US/Eastern`, `US/Central`, `US/Mountain`, `US/Pacific`, `UTC`, `Europe/London`, `Europe/Berlin`, `Asia/Kolkata`, `Asia/Tokyo`, `Australia/Sydney`
+- Pick `1`, `2`, or `3` to confirm a slot — generates a `confirmed.ics` and
+  a confirmation email draft
+- Pick `r` for a reschedule email template
+- Pick `c` for a cancellation email template
 
 ## Output Files
 
-All outputs are saved to the `output/` directory:
+All saved to `output/`:
 
-- `candidate_email.txt` — draft email to send to the candidate
-- `internal_email.txt` — draft email for the interview panel
-- `option_1.ics`, `option_2.ics`, `option_3.ics` — calendar invites per slot
-- `confirmed.ics` — created when you confirm a slot interactively
+| File | Description |
+|---|---|
+| `candidate_email.txt` | Email to send to the candidate with time options |
+| `internal_email.txt` | Email to send to the interview panel |
+| `confirmation_email.txt` | Email confirming the chosen slot |
+| `reschedule_email.txt` | Email with updated times (if rescheduling) |
+| `cancellation_email.txt` | Cancellation notice (if needed) |
+| `option_1.ics` .. `option_3.ics` | Calendar invites for each proposed slot |
+| `confirmed.ics` | Calendar invite for the confirmed slot |
 
-Schedule history is appended to `schedule_history.json` in the project root.
+## Viewing History
 
-## Example Output
-
+```bash
+python3 interview_scheduler.py --history
 ```
-============================================================
-  INTERVIEW SCHEDULING HELPER
-============================================================
 
-Candidate : Jane Doe (jane.doe@example.com)
-Role      : Senior Backend Engineer
-Type      : panel
-Duration  : 60 min + 15 min buffer
-Location  : Microsoft Teams — https://teams.microsoft.com/l/meetup-join/example
+Shows all past schedules with candidate, role, panel, times, and status
+(proposed / confirmed / cancelled).
 
-Proposed slots:
-  Option 1: Monday, February 02, 2026 10:00 AM – 11:00 AM (US/Eastern)
-  Option 2: Tuesday, February 03, 2026 01:00 PM – 02:00 PM (US/Eastern)
-  Option 3: Wednesday, February 04, 2026 03:00 PM – 04:00 PM (US/Eastern)
+## Supported Timezones
 
-Candidate email draft → output/candidate_email.txt
-Internal email draft  → output/internal_email.txt
-ICS Option 1          → output/option_1.ics
-ICS Option 2          → output/option_2.ics
-ICS Option 3          → output/option_3.ics
-
-History log updated   → schedule_history.json
-
-Confirm a slot (1-3) or press Enter to skip:
-```
+US/Eastern, US/Central, US/Mountain, US/Pacific, UTC, Europe/London,
+Europe/Berlin, Asia/Kolkata, Asia/Tokyo, Australia/Sydney
 
 ## Requirements
 
-Python 3.10+ (uses only the standard library).
+Python 3.10+ (standard library only — no pip install needed).
